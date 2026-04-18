@@ -1,0 +1,20 @@
+<h1>Shopping Cart</h1>
+<div class="cart-item">
+  <span class="name">Chaos Toolkit Pro</span>
+  <span class="price">$99.99</span>
+</div>
+<div class="cart-item">
+  <span class="name">Load Tester Deluxe</span>
+  <span class="price">$149.99</span>
+</div>
+<div class="total">
+  <strong>Total: $249.98</strong>
+</div>
+<a href="/checkout" class="btn">Proceed to Checkout</a>
+
+<!-- INTENTIONAL ISSUE: JavaScript error — calculateCartTotal is not defined -->
+<script>
+  var cartItems = document.querySelectorAll(".cart-item");
+  var cartTotal = calculateCartTotal(cartItems);
+  document.getElementById("cart-summary").textContent = "You have " + cartTotal + " items";
+</script>

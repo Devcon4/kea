@@ -1,0 +1,65 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "agent: build",
+      "type": "npm",
+      "script": "build",
+      "path": "agent",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": ["$tsc"]
+    },
+    {
+      "label": "agent: typecheck",
+      "type": "shell",
+      "command": "npx tsc --noEmit",
+      "options": { "cwd": "${workspaceFolder}/agent" },
+      "group": "build",
+      "problemMatcher": ["$tsc"]
+    },
+    {
+      "label": "agent: dev",
+      "type": "npm",
+      "script": "dev",
+      "path": "agent",
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "agent: test",
+      "type": "npm",
+      "script": "test",
+      "path": "agent",
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "agent: test:watch",
+      "type": "npm",
+      "script": "test:watch",
+      "path": "agent",
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "agent: format",
+      "type": "npm",
+      "script": "format",
+      "path": "agent",
+      "problemMatcher": []
+    },
+    {
+      "label": "agent: format:check",
+      "type": "npm",
+      "script": "format:check",
+      "path": "agent",
+      "problemMatcher": []
+    }
+  ]
+}

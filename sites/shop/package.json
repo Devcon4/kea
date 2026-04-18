@@ -1,0 +1,14 @@
+{
+  "name": "kea-shop",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "ejs": "^3.1.10",
+    "express-ejs-layouts": "^2.5.1"
+  }
+}

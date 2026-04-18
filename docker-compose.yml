@@ -1,0 +1,132 @@
+services:
+  # --- Profile: infra ---
+  postgres:
+    image: postgres:17-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: kea
+      POSTGRES_PASSWORD: kea
+      POSTGRES_DB: kea
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kea"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    profiles: [infra, dev, all]
+
+  # --- Profile: api ---
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    ports:
+      - "4000:4000"
+    environment:
+      - DATABASE_URL=postgres://kea:kea@postgres:5432/kea
+      - SEQ_URL=http://seq:5341
+      - PORT=4000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      seq:
+        condition: service_started
+    profiles: [api, dev, all]
+
+  # --- Profile: dashboard ---
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    ports:
+      - "4200:80"
+    profiles: [dashboard, dev, all]
+
+  # --- Profile: agent ---
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    devices:
+      - nvidia.com/gpu=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    profiles: [infra, agent, dev, all]
+
+  ollama-pull:
+    image: ollama/ollama:latest
+    entrypoint: ["sh", "-c", "until ollama -v 2>/dev/null; do sleep 1; done; ollama pull gemma4"]
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    depends_on:
+      - ollama
+    profiles: [infra, agent, dev, all]
+
+  seq:
+    image: datalust/seq:latest
+    ports:
+      - "5341:5341" # Ingestion API
+      - "8080:80" # Web UI
+    environment:
+      - ACCEPT_EULA=Y
+      - SEQ_FIRSTRUN_NOAUTHENTICATION=true
+    volumes:
+      - seq-data:/data
+    profiles: [infra, agent, all]
+
+  agent:
+    build:
+      context: ./agent
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    env_file: ./agent/.env
+    environment:
+      - LLM_BASE_URL=http://ollama:11434/v1
+      - SEQ_URL=http://seq:5341
+      - KEA_API_URL=http://api:4000
+    shm_size: "256mb"
+    depends_on:
+      ollama-pull:
+        condition: service_completed_successfully
+      seq:
+        condition: service_started
+      api:
+        condition: service_started
+    volumes:
+      - agent-data:/app/data
+    profiles: [agent, all]
+
+  # --- Profile: sites ---
+  blog:
+    build: ./sites/blog
+    ports:
+      - "8081:80"
+    profiles: [sites, dev, all]
+
+  forms:
+    build: ./sites/forms
+    ports:
+      - "8082:80"
+    profiles: [sites, all]
+
+  shop:
+    build: ./sites/shop
+    ports:
+      - "8083:3000"
+    profiles: [sites, all]
+
+volumes:
+  ollama-models:
+  agent-data:
+  seq-data:
+  postgres-data:

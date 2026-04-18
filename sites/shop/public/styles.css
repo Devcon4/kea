@@ -1,0 +1,93 @@
+/* Kea Shop — purple/violet theme */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #1a1a2e;
+  background: #f8f5fc;
+}
+
+/* Navigation */
+nav {
+  background: #2d1b4e;
+  padding: 1rem 2rem;
+  display: flex;
+  gap: 2rem;
+  align-items: center;
+}
+nav a { color: #e0d4f0; text-decoration: none; font-size: 0.95rem; }
+nav a:hover { color: #b68bd6; }
+nav .brand { font-weight: 700; font-size: 1.2rem; color: #b68bd6; }
+
+/* Main content */
+main { max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
+h1 { color: #2d1b4e; margin-bottom: 1rem; }
+p { line-height: 1.6; color: #444; margin-bottom: 1rem; }
+
+/* Product grid (index) */
+.product-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.25rem; }
+.product-card { background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.product-card img { width: 100%; height: 200px; object-fit: cover; }
+.product-card .info { padding: 1rem; }
+.product-card h2 { font-size: 1.1rem; color: #2d1b4e; margin-bottom: 0.25rem; }
+.product-card .price { color: #7c3aed; font-weight: 700; font-size: 1.1rem; }
+.product-card a { display: inline-block; margin-top: 0.75rem; color: #5b21b6; text-decoration: none; font-weight: 600; }
+.product-card a:hover { text-decoration: underline; }
+
+/* Product detail */
+.product { background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); max-width: 700px; margin: 0 auto; }
+.product img { width: 100%; height: 300px; object-fit: cover; }
+.product .details { padding: 1.5rem; }
+.product h1 { color: #2d1b4e; margin-bottom: 0.5rem; }
+.product .price { color: #7c3aed; font-weight: 700; font-size: 1.3rem; margin-bottom: 1rem; }
+
+/* Cart */
+.cart-item {
+  background: #fff; border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  display: flex; justify-content: space-between; align-items: center;
+}
+.cart-item .name { font-weight: 600; color: #2d1b4e; }
+.cart-item .price { color: #7c3aed; font-weight: 700; }
+.total {
+  background: #fff; border-radius: 8px; padding: 1.25rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  text-align: right; font-size: 1.1rem; margin-top: 0.5rem;
+}
+.total strong { color: #2d1b4e; }
+
+/* Checkout */
+.order-summary { background: #f3eef9; border-radius: 8px; padding: 1.25rem; margin-bottom: 1.5rem; }
+.order-summary h2 { font-size: 1rem; color: #2d1b4e; margin-bottom: 0.5rem; }
+form { background: #fff; border-radius: 8px; padding: 2rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.field { margin-bottom: 1.25rem; }
+label { display: block; font-weight: 600; margin-bottom: 0.35rem; color: #2d1b4e; font-size: 0.95rem; }
+input, select { width: 100%; padding: 0.6rem 0.75rem; border: 1px solid #ccc; border-radius: 4px; font-size: 1rem; }
+input:focus, select:focus { outline: 2px solid #7c3aed; border-color: #7c3aed; }
+.row { display: flex; gap: 1rem; }
+.row .field { flex: 1; }
+button {
+  background: #2d1b4e; color: #fff; border: none;
+  padding: 0.75rem 1.5rem; border-radius: 4px;
+  font-size: 1rem; cursor: pointer; width: 100%; margin-top: 0.5rem;
+}
+button:hover { background: #5b21b6; }
+
+/* 404 page */
+.error-page { text-align: center; margin-top: 2rem; }
+.error-page h1 { font-size: 4rem; margin-bottom: 0.5rem; }
+.error-page h2 { color: #5b21b6; margin-bottom: 1rem; }
+
+/* Buttons & links */
+.btn {
+  display: inline-block; background: #2d1b4e; color: #fff;
+  padding: 0.75rem 1.5rem; border-radius: 4px;
+  text-decoration: none; font-weight: 600; margin-top: 1rem;
+}
+.btn:hover { background: #5b21b6; }
+.back { display: inline-block; margin-top: 1.5rem; color: #5b21b6; text-decoration: none; font-weight: 600; }
+.back:hover { text-decoration: underline; }
+
+/* Footer */
+footer { text-align: center; padding: 2rem; color: #888; font-size: 0.85rem; }

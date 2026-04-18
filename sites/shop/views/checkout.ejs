@@ -1,0 +1,34 @@
+<%
+// INTENTIONAL ISSUE: broken CSS reference — this file does not exist
+var extraHead = '<link rel="stylesheet" href="/styles/checkout.css">';
+%>
+<h1>Checkout</h1>
+<div class="order-summary">
+  <h2>Order Summary</h2>
+  <p>2 items — Total: <strong>$249.98</strong></p>
+</div>
+<form action="/api/checkout" method="POST">
+  <div class="field">
+    <label for="card-name">Name on Card</label>
+    <input type="text" id="card-name" name="cardName" required placeholder="Jane Doe">
+  </div>
+  <div class="field">
+    <label for="card-number">Card Number</label>
+    <input type="text" id="card-number" name="cardNumber" required placeholder="4242 4242 4242 4242" autocomplete="cc-number">
+  </div>
+  <div class="row">
+    <div class="field">
+      <label for="expiry">Expiry</label>
+      <input type="text" id="expiry" name="expiry" required placeholder="MM/YY" autocomplete="cc-exp">
+    </div>
+    <div class="field">
+      <label for="cvc">CVC</label>
+      <input type="text" id="cvc" name="cvc" required placeholder="123" autocomplete="cc-csc">
+    </div>
+  </div>
+  <div class="field">
+    <label for="address">Shipping Address</label>
+    <input type="text" id="address" name="address" required placeholder="123 Main St">
+  </div>
+  <button type="submit">Place Order</button>
+</form>

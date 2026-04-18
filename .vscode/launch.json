@@ -1,0 +1,57 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Agent: Dev",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "${workspaceFolder}/agent/node_modules/.bin/tsx",
+      "args": ["src/index.ts"],
+      "cwd": "${workspaceFolder}/agent",
+      "env": {
+        "NODE_ENV": "development",
+        "LOG_LEVEL": "debug"
+      },
+      "console": "integratedTerminal",
+      "sourceMaps": true,
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"]
+    },
+    {
+      "name": "Agent: Debug Current File",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "${workspaceFolder}/agent/node_modules/.bin/tsx",
+      "args": ["${file}"],
+      "cwd": "${workspaceFolder}/agent",
+      "env": {
+        "NODE_ENV": "development",
+        "LOG_LEVEL": "debug"
+      },
+      "console": "integratedTerminal",
+      "sourceMaps": true,
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"]
+    },
+    {
+      "name": "Agent: Test (Debug)",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "${workspaceFolder}/agent/node_modules/.bin/vitest",
+      "args": ["run", "--reporter=verbose"],
+      "cwd": "${workspaceFolder}/agent",
+      "console": "integratedTerminal",
+      "sourceMaps": true,
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"]
+    },
+    {
+      "name": "Agent: Test Current File",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "${workspaceFolder}/agent/node_modules/.bin/vitest",
+      "args": ["run", "${relativeFile}", "--reporter=verbose"],
+      "cwd": "${workspaceFolder}/agent",
+      "console": "integratedTerminal",
+      "sourceMaps": true,
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"]
+    }
+  ]
+}

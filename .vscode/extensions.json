@@ -1,0 +1,11 @@
+{
+  "recommendations": [
+    "esbenp.prettier-vscode",
+    "vitest.explorer",
+    "ms-vscode.vscode-typescript-next",
+    "golang.go",
+    "redhat.vscode-yaml",
+    "ms-kubernetes-tools.vscode-kubernetes-tools",
+    "ms-azuretools.vscode-containers"
+  ]
+}

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- INTENTIONAL ISSUE: missing <title> tag -->
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #1a1a2e; background: #f8f9fa; }
+    nav { background: #1a1a2e; padding: 1rem 2rem; display: flex; gap: 2rem; align-items: center; }
+    nav a { color: #e8e8f0; text-decoration: none; font-size: 0.95rem; }
+    nav a:hover { color: #7eb8da; }
+    nav .brand { font-weight: 700; font-size: 1.2rem; color: #7eb8da; }
+    main { max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+    article h1 { color: #1a1a2e; margin-bottom: 0.5rem; }
+    article .meta { color: #888; font-size: 0.85rem; margin-bottom: 1.5rem; }
+    article p { line-height: 1.7; color: #444; margin-bottom: 1rem; }
+    article h2 { color: #1a1a2e; margin: 1.5rem 0 0.75rem; }
+    article ul { margin: 0.5rem 0 1rem 1.5rem; color: #444; line-height: 1.7; }
+    .back { display: inline-block; margin-top: 2rem; color: #2a6496; text-decoration: none; }
+    footer { text-align: center; padding: 2rem; color: #888; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="/" class="brand">Kea Blog</a>
+    <a href="/about.html">About</a>
+    <a href="/posts.html">Posts</a>
+    <a href="/contact.html">Contact</a>
+  </nav>
+  <main>
+    <article>
+      <h1>Web Accessibility Fundamentals</h1>
+      <p class="meta">March 22, 2026</p>
+      <p>Web accessibility ensures that websites are usable by everyone, including people with disabilities. The Web Content Accessibility Guidelines (WCAG) provide a shared standard for web accessibility.</p>
+      <h2>Key Principles</h2>
+      <ul>
+        <li><strong>Perceivable</strong> — Information must be presentable in ways users can perceive (alt text, captions, contrast).</li>
+        <li><strong>Operable</strong> — Interface components must be operable (keyboard navigation, enough time, no seizures).</li>
+        <li><strong>Understandable</strong> — Information and UI operation must be understandable (readable, predictable, input assistance).</li>
+        <li><strong>Robust</strong> — Content must be robust enough for assistive technologies to interpret.</li>
+      </ul>
+      <h2>Common Issues</h2>
+      <p>The most common accessibility issues include missing alt text on images, poor color contrast, missing form labels, and lack of keyboard navigation support. Automated tools like Kea can detect many of these issues.</p>
+      <p>See also: <a href="http://example.com/broken-external">External Accessibility Resources</a></p>
+      <a href="/posts.html" class="back">&larr; Back to all posts</a>
+    </article>
+  </main>
+  <footer>&copy; 2026 Kea Blog. All rights reserved.</footer>
+</body>
+</html>

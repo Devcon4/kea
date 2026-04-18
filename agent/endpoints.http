@@ -1,0 +1,25 @@
+@base = http://localhost:3000
+
+### Health check
+GET {{base}}/healthz
+
+### Readiness check
+GET {{base}}/readyz
+
+### Agent cards (A2A discovery)
+GET {{base}}/.well-known/agent-cards
+
+### Exploration status (sitemap + findings stats)
+GET {{base}}/api/status
+
+### Full sitemap
+GET {{base}}/api/sitemap
+
+### All findings
+GET {{base}}/api/findings
+
+### Findings filtered by URL
+GET {{base}}/api/findings?url=http://forms:80
+
+### All agent tasks
+GET {{base}}/api/tasks
