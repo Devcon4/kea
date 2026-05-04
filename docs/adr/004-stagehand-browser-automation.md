@@ -1,6 +1,7 @@
 # ADR-004: Stagehand for Browser Automation
 
 **Status**: Accepted
+**Scope**: agent
 
 ## Context
 

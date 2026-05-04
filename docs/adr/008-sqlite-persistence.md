@@ -1,6 +1,7 @@
 # ADR-008: SQLite for Persistence
 
-**Status**: Accepted
+**Status**: Superseded by [ADR-020](020-central-postgresql-api.md)
+**Scope**: agent
 
 ## Context
 

@@ -1,6 +1,7 @@
 # ADR-014: esbuild for Bundling
 
 **Status**: Accepted
+**Scope**: agent
 
 ## Context
 

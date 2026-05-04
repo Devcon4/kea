@@ -22,23 +22,16 @@ import type {
 } from "@kea/shared";
 
 export type SessionRepository = ReturnType<typeof createSessionRepository>;
-
 export function createSessionRepository(db: Database) {
   // ── Aggregate root persistence ───────────────────────
 
   async function list(): Promise<Session[]> {
-    const rows = await db
-      .select()
-      .from(sessions)
-      .orderBy(desc(sessions.startedAt));
+    const rows = await db.select().from(sessions).orderBy(desc(sessions.startedAt));
     return rows as Session[];
   }
 
   async function getById(id: string): Promise<Session | undefined> {
-    const [row] = await db
-      .select()
-      .from(sessions)
-      .where(eq(sessions.id, id));
+    const [row] = await db.select().from(sessions).where(eq(sessions.id, id));
     return row as Session | undefined;
   }
 
@@ -120,10 +113,7 @@ export function createSessionRepository(db: Database) {
       .from(sitemap)
       .where(
         opts?.status
-          ? and(
-              eq(sitemap.sessionId, sessionId),
-              eq(sitemap.status, opts.status),
-            )
+          ? and(eq(sitemap.sessionId, sessionId), eq(sitemap.status, opts.status))
           : eq(sitemap.sessionId, sessionId),
       )
       .orderBy(asc(sitemap.discoveredAt));
@@ -142,10 +132,7 @@ export function createSessionRepository(db: Database) {
     }));
   }
 
-  async function savePage(
-    sessionId: string,
-    entry: SitemapEntry,
-  ): Promise<void> {
+  async function savePage(sessionId: string, entry: SitemapEntry): Promise<void> {
     await db
       .insert(sitemap)
       .values({
@@ -168,10 +155,7 @@ export function createSessionRepository(db: Database) {
       });
   }
 
-  async function savePageDiscovery(
-    sessionId: string,
-    entry: SitemapEntry,
-  ): Promise<void> {
+  async function savePageDiscovery(sessionId: string, entry: SitemapEntry): Promise<void> {
     await db
       .insert(sitemap)
       .values({
@@ -186,10 +170,7 @@ export function createSessionRepository(db: Database) {
       .onConflictDoNothing();
   }
 
-  async function savePageVisit(
-    sessionId: string,
-    entry: SitemapEntry,
-  ): Promise<void> {
+  async function savePageVisit(sessionId: string, entry: SitemapEntry): Promise<void> {
     await db
       .insert(sitemap)
       .values({
@@ -212,54 +193,38 @@ export function createSessionRepository(db: Database) {
       });
   }
 
-  async function removePage(
-    sessionId: string,
-    url: string,
-  ): Promise<void> {
-    await db
-      .delete(sitemap)
-      .where(
-        and(eq(sitemap.sessionId, sessionId), eq(sitemap.url, url)),
-      );
+  async function removePage(sessionId: string, url: string): Promise<void> {
+    await db.delete(sitemap).where(and(eq(sitemap.sessionId, sessionId), eq(sitemap.url, url)));
   }
 
   // ── Owned entity persistence: Findings ───────────────
 
   async function listFindings(
     sessionId: string,
-    url?: string,
+    opts?: { url?: string; scenarioId?: number },
   ): Promise<Finding[]> {
+    const filters = [eq(findings.sessionId, sessionId)];
+    if (opts?.url) filters.push(eq(findings.url, opts.url));
+    if (opts?.scenarioId !== undefined) {
+      filters.push(eq(findings.scenarioId, opts.scenarioId));
+    }
     const rows = await db
       .select()
       .from(findings)
-      .where(
-        url
-          ? and(
-              eq(findings.sessionId, sessionId),
-              eq(findings.url, url),
-            )
-          : eq(findings.sessionId, sessionId),
-      )
+      .where(filters.length === 1 ? filters[0] : and(...filters))
       .orderBy(desc(findings.timestamp));
 
     return rows as Finding[];
   }
 
-  async function saveFinding(
-    data: Omit<Finding, "id">,
-  ): Promise<Finding> {
-    const [row] = await db
-      .insert(findings)
-      .values(data)
-      .returning();
+  async function saveFinding(data: Omit<Finding, "id">): Promise<Finding> {
+    const [row] = await db.insert(findings).values(data).returning();
     return row as Finding;
   }
 
   // ── Owned entity persistence: Messages ────────────
 
-  async function listMessages(
-    sessionId: string,
-  ): Promise<ChatMessage[]> {
+  async function listMessages(sessionId: string): Promise<ChatMessage[]> {
     const rows = await db
       .select()
       .from(messages)
@@ -269,13 +234,8 @@ export function createSessionRepository(db: Database) {
     return rows as ChatMessage[];
   }
 
-  async function saveMessage(
-    data: Omit<ChatMessage, "id">,
-  ): Promise<ChatMessage> {
-    const [row] = await db
-      .insert(messages)
-      .values(data)
-      .returning();
+  async function saveMessage(data: Omit<ChatMessage, "id">): Promise<ChatMessage> {
+    const [row] = await db.insert(messages).values(data).returning();
     return row as ChatMessage;
   }
 

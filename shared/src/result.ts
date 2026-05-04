@@ -34,24 +34,17 @@ export function isErr<T, E>(result: Result<T, E>): result is Err<E> {
 /** Unwrap a Result, throwing if Err */
 export function unwrap<T, E>(result: Result<T, E>): T {
   if (result.ok) return result.value;
-  throw result.error instanceof Error
-    ? result.error
-    : new Error(String(result.error));
+  throw result.error instanceof Error ? result.error : new Error(String(result.error));
 }
 
 /** Map over the success value */
-export function mapResult<T, U, E>(
-  result: Result<T, E>,
-  fn: (val: T) => U,
-): Result<U, E> {
+export function mapResult<T, U, E>(result: Result<T, E>, fn: (val: T) => U): Result<U, E> {
   if (result.ok) return Ok(fn(result.value));
   return result;
 }
 
 /** Wrap an async function that might throw into a Result */
-export async function tryCatch<T>(
-  fn: () => Promise<T>,
-): Promise<Result<T, Error>> {
+export async function tryCatch<T>(fn: () => Promise<T>): Promise<Result<T, Error>> {
   try {
     return Ok(await fn());
   } catch (e) {

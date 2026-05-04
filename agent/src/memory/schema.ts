@@ -12,9 +12,7 @@ export const sitemap = sqliteTable(
     discoveredAt: integer("discovered_at").notNull(),
     visitedAt: integer("visited_at"),
   },
-  (table) => [
-    index("idx_sitemap_status").on(table.status),
-  ],
+  (table) => [index("idx_sitemap_status").on(table.status)],
 );
 
 // -- Findings table --
@@ -47,7 +45,5 @@ export const agentMessages = sqliteTable(
     thinking: text("thinking"),
     timestamp: integer("timestamp").notNull(),
   },
-  (table) => [
-    index("idx_messages_ts").on(table.timestamp),
-  ],
+  (table) => [index("idx_messages_ts").on(table.timestamp)],
 );

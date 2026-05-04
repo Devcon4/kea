@@ -1,14 +1,23 @@
+# Build context: monorepo root (so @kea/shared at file:../shared resolves).
+
 # ── Build stage ───────────────────────────────────────────
 FROM node:24-bookworm-slim AS build
 
-WORKDIR /app
+WORKDIR /repo
 
-COPY package.json package-lock.json ./
-RUN npm ci
+# Install shared package first (its own deps are needed when vite/rollup
+# bundles shared sources into the agent build).
+COPY shared/package.json shared/package-lock.json shared/tsconfig.json shared/
+COPY shared/src/ shared/src/
+RUN cd shared && npm ci
 
-COPY tsconfig.json ./
-COPY src/ src/
-COPY drizzle/ drizzle/
+COPY agent/package.json agent/package-lock.json agent/
+RUN cd agent && npm ci
+
+WORKDIR /repo/agent
+COPY agent/tsconfig.json ./
+COPY agent/vite.config.ts* ./
+COPY agent/src/ src/
 
 RUN npm run build
 
@@ -24,18 +33,18 @@ ENV CHROME_PATH=/usr/bin/chromium
 
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+# Repo-shaped layout for the prod install: shared lives one directory up so
+# `file:../shared` in the agent's package.json keeps resolving.
+COPY shared/package.json shared/package-lock.json /repo/shared/
+COPY shared/src/ /repo/shared/src/
+RUN cd /repo/shared && npm ci --omit=dev
+
+COPY agent/package.json agent/package-lock.json /repo/agent/
+WORKDIR /repo/agent
 RUN npm ci --omit=dev
 
-COPY --from=build /app/dist/ dist/
-COPY drizzle/ drizzle/
+COPY --from=build /repo/agent/dist/ dist/
 
 ENV NODE_ENV=production
-ENV PORT=3000
-
-EXPOSE 3000
-
-HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
-  CMD node -e "fetch('http://localhost:3000/healthz').then(r=>{if(!r.ok)throw r.status})"
 
 CMD ["node", "dist/index.js"]

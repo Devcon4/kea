@@ -42,9 +42,16 @@ services:
       dockerfile: Dockerfile
     ports:
       - "4200:80"
+    depends_on:
+      api:
+        condition: service_started
     profiles: [dashboard, dev, all]
 
   # --- Profile: agent ---
+  # By default the agent talks to the host's ollama (WSL-native, port 11434).
+  # The in-compose `ollama` and `ollama-pull` services below remain available
+  # under the opt-in `compose-llm` profile for environments where running ollama
+  # on the host is not feasible (e.g. CI without a local model runtime).
   ollama:
     image: ollama/ollama:latest
     ports:
@@ -60,7 +67,7 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-    profiles: [infra, agent, dev, all]
+    profiles: [compose-llm]
 
   ollama-pull:
     image: ollama/ollama:latest
@@ -69,7 +76,7 @@ services:
       - OLLAMA_HOST=http://ollama:11434
     depends_on:
       - ollama
-    profiles: [infra, agent, dev, all]
+    profiles: [compose-llm]
 
   seq:
     image: datalust/seq:latest
@@ -81,30 +88,32 @@ services:
       - SEQ_FIRSTRUN_NOAUTHENTICATION=true
     volumes:
       - seq-data:/data
-    profiles: [infra, agent, all]
+    profiles: [infra, agent, dev, all]
 
   agent:
     build:
-      context: ./agent
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
+      context: .
+      dockerfile: agent/Dockerfile
     env_file: ./agent/.env
     environment:
-      - LLM_BASE_URL=http://ollama:11434/v1
+      # Default: host-native ollama via the docker host gateway. Override in
+      # ./agent/.env if running in an environment where the in-compose ollama
+      # service (under the `compose-llm` profile) is preferred.
+      - LLM_BASE_URL=http://host.docker.internal:11434/v1
       - SEQ_URL=http://seq:5341
       - KEA_API_URL=http://api:4000
+    extra_hosts:
+      # Lets the agent container reach the host's ollama on Linux/WSL.
+      - "host.docker.internal:host-gateway"
     shm_size: "256mb"
     depends_on:
-      ollama-pull:
-        condition: service_completed_successfully
       seq:
         condition: service_started
       api:
         condition: service_started
     volumes:
       - agent-data:/app/data
-    profiles: [agent, all]
+    profiles: [agent]
 
   # --- Profile: sites ---
   blog:

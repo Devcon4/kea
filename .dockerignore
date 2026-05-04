@@ -1,0 +1,16 @@
+# Build context for the monorepo. The agent, api, and dashboard images all
+# build with `context: .` and reach across packages, so we exclude only the
+# directories none of them need (operator/, sites/, docs/) plus build
+# artifacts. Excluding api/ or dashboard/ here breaks their COPY steps.
+**/node_modules/
+**/dist/
+**/.env
+.git/
+.vscode/
+**/*.db
+**/*.db-journal
+**/*.db-wal
+operator/
+sites/
+docs/
+*.md

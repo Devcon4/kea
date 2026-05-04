@@ -1,295 +1,370 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { createHandler, agentCard, parsePlan, buildFallbackPlan } from "./coordinator.js";
-import type { AgentDeps, CoordinatorPlan } from "./coordinator.js";
-import { Ok, Err } from "../result.js";
-import type { Task, Message } from "../a2a/types.js";
-import type { DataStore, SitemapEntry, SitemapStats } from "../memory/data-store.js";
+import { describe, expect, it } from "vitest";
+import {
+  COORDINATOR_SYSTEM_PROMPT,
+  buildCoordinatorTools,
+  buildFallbackPlan,
+} from "./coordinator.js";
+import type { CoordinatorDeps } from "./coordinator.js";
+import type { Browser } from "../browser/stagehand.js";
+import type {
+  Feature,
+  FeatureWithActivePlan,
+  Scenario,
+  SitemapEntry,
+  SitemapStats,
+} from "../memory/data-store.js";
+import { FakeDataStore } from "../pi/test-harness.js";
 
-vi.mock("../logger.js", () => ({
-  createLogger: () => ({
-    info: vi.fn(),
-    debug: vi.fn(),
-    error: vi.fn(),
-    warn: vi.fn(),
-  }),
-}));
-
-vi.mock("../llm/client.js", () => ({
-  chat: vi.fn(),
-}));
-
-import { chat } from "../llm/client.js";
-const mockChat = vi.mocked(chat);
-
-function createMockStore(): DataStore {
+function entry(url: string, status: SitemapEntry["status"]): SitemapEntry {
   return {
-    getSitemapStats: vi.fn().mockResolvedValue(
-      Ok({ total: 5, discovered: 3, visited: 1, tested: 1 }),
-    ),
-    getUnvisitedPages: vi.fn().mockResolvedValue(
-      Ok([
-        { url: "https://example.com/page1", title: "", links: [], status: "discovered", discoveredAt: 1, visitedAt: null },
-        { url: "https://example.com/page2", title: "", links: [], status: "discovered", discoveredAt: 2, visitedAt: null },
-      ]),
-    ),
-    getUntestedPages: vi.fn().mockResolvedValue(
-      Ok([
-        { url: "https://example.com/visited1", title: "Visited", links: [], status: "visited", discoveredAt: 1, visitedAt: 100 },
-      ]),
-    ),
-    addMessage: vi.fn().mockResolvedValue(Ok(1)),
-  } as unknown as DataStore;
-}
-
-function createTask(): Task {
-  return {
-    id: "task-1",
-    contextId: "ctx-1",
-    status: { state: "TASK_STATE_WORKING", timestamp: new Date().toISOString() },
-    history: [],
+    url,
+    title: "",
+    links: [],
+    status,
+    discoveredAt: 1,
+    visitedAt: status === "discovered" ? null : 100,
   };
 }
 
-function createMessage(text: string): Message {
+function feature(
+  id: number,
+  status: Feature["status"],
+  activePlan: FeatureWithActivePlan["activePlan"] = null,
+): FeatureWithActivePlan {
   return {
-    messageId: "msg-1",
-    role: "ROLE_USER",
-    parts: [{ text }],
+    feature: {
+      id,
+      sessionId: "session-1",
+      name: `feature-${id}`,
+      description: "",
+      urlPatterns: [`https://example.com/feature-${id}/*`],
+      status,
+      discoveredBy: "manual",
+      discoveredAt: 1,
+      verifiedAt: null,
+    },
+    activePlan,
   };
 }
 
-describe("coordinator agentCard", () => {
-  it("has correct name", () => {
-    expect(agentCard.name).toBe("coordinator");
-  });
+function scenario(id: number): Scenario {
+  return {
+    id,
+    testPlanId: 1,
+    name: `scenario-${id}`,
+    entryUrl: "https://example.com/start",
+    steps: [{ kind: "navigate", url: "https://example.com/start" }],
+    expectedOutcome: "works",
+    createdAt: 1,
+  };
+}
 
-  it("has skills defined", () => {
-    expect(agentCard.skills.length).toBeGreaterThan(0);
-  });
+const stubBrowser = {
+  navigate: async (url: string) => ({ ok: true as const, value: { url, title: "ok" } }),
+  extractLinks: async () => ({ ok: true as const, value: [] as string[] }),
+  extractText: async () => ({ ok: true as const, value: "" }),
+} as unknown as Browser;
 
-  it("has version", () => {
-    expect(agentCard.version).toBe("0.2.0");
-  });
-});
+function makeDeps(): { deps: CoordinatorDeps; store: FakeDataStore } {
+  const store = new FakeDataStore();
+  const deps: CoordinatorDeps = {
+    store,
+    browser: stubBrowser,
+    targetOrigin: "https://example.com",
+    maxPages: 10,
+    sessionId: "session-1",
+    sessionStartedAt: 100,
+  };
+  return { deps, store };
+}
 
-describe("parsePlan", () => {
-  it("parses a valid multi-command plan", () => {
-    const text = JSON.stringify({
-      commands: [
-        { type: "navigate", url: "https://example.com/a" },
-        { type: "test", url: "https://example.com/b" },
-        { type: "test", url: "https://example.com/c" },
-      ],
-    });
-    const plan = parsePlan(text);
-    expect(plan.commands).toHaveLength(3);
-    expect(plan.commands[0]).toEqual({ type: "navigate", url: "https://example.com/a" });
-    expect(plan.commands[1].type).toBe("test");
-  });
+async function executeTool(
+  deps: CoordinatorDeps,
+  toolName: string,
+  args: Record<string, unknown>,
+  progress = {
+    pagesProcessed: 0,
+    scenariosRun: 0,
+    featuresDiscoveryRuns: 0,
+    signalledDone: false,
+    doneReason: "",
+    outcome: null,
+    stagnantStreak: 0,
+    lastProgressSignature: "",
+  },
+) {
+  const tools = buildCoordinatorTools(deps, progress);
+  const tool = tools.find((candidate) => candidate.name === toolName);
+  expect(tool).toBeDefined();
+  return {
+    progress,
+    result: await tool!.execute("id-1", args, undefined, undefined, {} as never),
+  };
+}
 
-  it("parses invalidate and remove commands", () => {
-    const text = JSON.stringify({
-      commands: [
-        { type: "invalidate", url: "https://example.com/stale" },
-        { type: "remove", url: "https://example.com/dead" },
-      ],
-    });
-    const plan = parsePlan(text);
-    expect(plan.commands).toHaveLength(2);
-    expect(plan.commands[0]).toEqual({ type: "invalidate", url: "https://example.com/stale" });
-    expect(plan.commands[1]).toEqual({ type: "remove", url: "https://example.com/dead" });
-  });
-
-  it("parses done command", () => {
-    const text = JSON.stringify({
-      commands: [{ type: "done", reason: "all tested" }],
-    });
-    const plan = parsePlan(text);
-    expect(plan.commands).toEqual([{ type: "done", reason: "all tested" }]);
-  });
-
-  it("strips markdown code fences", () => {
-    const text = '```json\n{"commands":[{"type":"done","reason":"finished"}]}\n```';
-    const plan = parsePlan(text);
-    expect(plan.commands[0].type).toBe("done");
-  });
-
-  it("returns done for non-JSON response", () => {
-    const plan = parsePlan("I think we should navigate to the about page");
-    expect(plan.commands[0].type).toBe("done");
-  });
-
-  it("returns done for empty commands array", () => {
-    const plan = parsePlan(JSON.stringify({ commands: [] }));
-    expect(plan.commands[0].type).toBe("done");
-  });
-
-  it("filters out invalid commands but keeps valid ones", () => {
-    const text = JSON.stringify({
-      commands: [
-        { type: "navigate", url: "https://example.com/a" },
-        { type: "bogus", url: "https://example.com/b" },
-        { type: "test" }, // missing url
-        { type: "test", url: "https://example.com/c" },
-      ],
-    });
-    const plan = parsePlan(text);
-    expect(plan.commands).toHaveLength(2);
-    expect(plan.commands[0].type).toBe("navigate");
-    expect(plan.commands[1].type).toBe("test");
+describe("COORDINATOR_SYSTEM_PROMPT", () => {
+  it("mentions every tool name and bans JSON output", () => {
+    const prompt = COORDINATOR_SYSTEM_PROMPT;
+    for (const name of [
+      "navigate",
+      "discover_features",
+      "author_plan",
+      "test",
+      "revalidate_feature",
+      "invalidate",
+      "remove",
+      "done",
+    ]) {
+      expect(prompt).toContain(`${name}(`);
+    }
+    expect(prompt).toMatch(/Do NOT emit JSON/i);
   });
 });
 
 describe("buildFallbackPlan", () => {
-  const entry = (url: string, status: string): any => ({
-    url, title: "", links: [], status, discoveredAt: 1, visitedAt: status === "visited" ? 100 : null,
-  });
+  const stats: SitemapStats = { total: 5, discovered: 1, visited: 2, tested: 2 };
 
-  it("includes 1 navigate + up to 3 tests", () => {
-    const stats: SitemapStats = { total: 6, discovered: 2, visited: 3, tested: 1 };
-    const unvisited = [entry("https://a.com", "discovered"), entry("https://b.com", "discovered")];
-    const untested = [entry("https://c.com", "visited"), entry("https://d.com", "visited"), entry("https://e.com", "visited"), entry("https://f.com", "visited")];
+  it("covers all six deterministic rungs", () => {
+    expect(
+      buildFallbackPlan(
+        stats,
+        [entry("https://example.com/a", "discovered")],
+        ["https://example.com/b"],
+        [feature(10, "active")],
+        [scenario(20)],
+        [feature(30, "stale")],
+      ),
+    ).toEqual({ type: "navigate", url: "https://example.com/a" });
 
-    const plan = buildFallbackPlan(stats, unvisited, untested);
-    expect(plan.commands.filter((c) => c.type === "navigate")).toHaveLength(1);
-    expect(plan.commands.filter((c) => c.type === "test")).toHaveLength(3);
-  });
+    expect(
+      buildFallbackPlan(
+        stats,
+        [],
+        ["https://example.com/b"],
+        [feature(10, "active")],
+        [scenario(20)],
+        [feature(30, "stale")],
+      ),
+    ).toEqual({ type: "discover_features", url: "https://example.com/b" });
 
-  it("returns done when nothing to do", () => {
-    const plan = buildFallbackPlan({ total: 5, discovered: 0, visited: 0, tested: 5 }, [], []);
-    expect(plan.commands).toEqual([{ type: "done", reason: "all pages visited and tested" }]);
-  });
+    expect(
+      buildFallbackPlan(
+        stats,
+        [],
+        [],
+        [feature(10, "active")],
+        [scenario(20)],
+        [feature(30, "stale")],
+      ),
+    ).toEqual({ type: "author_plan", featureId: 10 });
 
-  it("returns only tests when no unvisited pages", () => {
-    const plan = buildFallbackPlan(
-      { total: 3, discovered: 0, visited: 2, tested: 1 },
-      [],
-      [entry("https://a.com", "visited")],
-    );
-    expect(plan.commands).toHaveLength(1);
-    expect(plan.commands[0].type).toBe("test");
+    expect(buildFallbackPlan(stats, [], [], [], [scenario(20)], [feature(30, "stale")])).toEqual({
+      type: "test",
+      scenarioId: 20,
+    });
+
+    expect(buildFallbackPlan(stats, [], [], [], [], [feature(30, "stale")])).toEqual({
+      type: "revalidate_feature",
+      featureId: 30,
+    });
+
+    expect(buildFallbackPlan(stats, [], [], [], [], [])).toEqual({
+      type: "done",
+      reason: "all features verified, all scenarios run",
+    });
   });
 });
 
-describe("coordinator createHandler", () => {
-  let store: DataStore;
-  let handler: ReturnType<typeof createHandler>;
+describe("buildCoordinatorTools", () => {
+  it("exposes exactly nine tools including fail_session", () => {
+    const { deps } = makeDeps();
+    const tools = buildCoordinatorTools(deps, {
+      pagesProcessed: 0,
+      scenariosRun: 0,
+      featuresDiscoveryRuns: 0,
+      signalledDone: false,
+      doneReason: "",
+      outcome: null,
+      stagnantStreak: 0,
+      lastProgressSignature: "",
+    });
 
-  beforeEach(() => {
-    mockChat.mockReset();
-    store = createMockStore();
-    handler = createHandler({ store });
+    expect(tools.map((tool) => tool.name).sort()).toEqual([
+      "author_plan",
+      "discover_features",
+      "done",
+      "fail_session",
+      "invalidate",
+      "navigate",
+      "remove",
+      "revalidate_feature",
+      "test",
+    ]);
   });
 
-  it("returns a function", () => {
-    expect(typeof handler).toBe("function");
+  it("done refuses termination when any work queue is non-empty", async () => {
+    const { deps, store } = makeDeps();
+    await store.upsertPage({
+      url: "https://example.com/a",
+      title: "",
+      links: [],
+      status: "discovered",
+    });
+
+    const { progress, result } = await executeTool(deps, "done", { reason: "premature" });
+
+    expect(progress.signalledDone).toBe(false);
+    expect((result.details as { overridden?: boolean }).overridden).toBe(true);
+    expect(result.terminate).toBeFalsy();
   });
 
-  it("queries store for stats, unvisited, and untested pages", async () => {
-    mockChat.mockResolvedValueOnce(
-      Ok({
-        id: "c1",
-        object: "chat.completion",
-        created: 1,
-        model: "test",
-        choices: [{ index: 0, message: { role: "assistant", content: '{"commands":[{"type":"navigate","url":"https://example.com/page1"}]}' }, finish_reason: "stop", logprobs: null }],
-      } as any),
+  it("done refuses when scenario cap was reached but unrun scenarios remain", async () => {
+    // Regression: applying the per-run scenario cap to the done gate let the
+    // coordinator declare completion while the queue still had work, because
+    // the cap zeroed `unrunScenarios` for the pending-work check. The fix is
+    // that done MUST consult raw state — the cap is a budget on launches, not
+    // proof of completion.
+    const { deps, store } = makeDeps();
+    const created = await store.createFeature({
+      name: "feature with one scenario",
+      description: "",
+      status: "active",
+      discoveredBy: "manual",
+      urlPatterns: ["https://example.com/feature-1/*"],
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    const planResult = await store.addTestPlan(created.value.feature.id, {
+      createdBy: "planner",
+      scenarios: [
+        {
+          name: "smoke",
+          entryUrl: "https://example.com/feature-1/",
+          steps: [{ kind: "navigate", url: "https://example.com/feature-1/" }],
+          expectedOutcome: "works",
+        },
+      ],
+    });
+    expect(planResult.ok).toBe(true);
+    if (!planResult.ok) return;
+
+    // Cap=1, already "used" — simulates a finished but unsuccessful test() call.
+    const capDeps: CoordinatorDeps = { ...deps, maxScenariosPerRun: 1 };
+    const { progress, result } = await executeTool(
+      capDeps,
+      "done",
+      { reason: "cap reached, calling done" },
+      {
+        pagesProcessed: 0,
+        scenariosRun: 1,
+        featuresDiscoveryRuns: 0,
+        signalledDone: false,
+        doneReason: "",
+        outcome: null,
+        stagnantStreak: 0,
+        lastProgressSignature: "",
+      },
     );
 
-    await handler(createTask(), createMessage("what next?"));
-
-    expect(store.getSitemapStats).toHaveBeenCalledOnce();
-    expect(store.getUnvisitedPages).toHaveBeenCalledWith(10);
-    expect(store.getUntestedPages).toHaveBeenCalledWith(10);
+    expect(progress.signalledDone).toBe(false);
+    expect(result.terminate).toBeFalsy();
+    const text = (result.content[0] as { text: string }).text;
+    expect(text).toContain("unrunScenarios=1");
+    expect(text).toContain("cap reached");
+    expect((result.details as { capReached?: boolean }).capReached).toBe(true);
   });
 
-  it("returns Ok with completed state on success", async () => {
-    mockChat.mockResolvedValueOnce(
-      Ok({
-        id: "c1",
-        object: "chat.completion",
-        created: 1,
-        model: "test",
-        choices: [{ index: 0, message: { role: "assistant", content: '{"commands":[{"type":"navigate","url":"https://example.com"}]}' }, finish_reason: "stop", logprobs: null }],
-      } as any),
+  it("done terminates when all queues are empty", async () => {
+    const { deps } = makeDeps();
+    const { progress, result } = await executeTool(deps, "done", { reason: "all done" });
+
+    expect(progress.signalledDone).toBe(true);
+    expect(progress.doneReason).toBe("all done");
+    expect(progress.outcome).toBe("completed");
+    expect(result.terminate).toBe(true);
+  });
+
+  it("fail_session refuses while pending work remains and stagnation is below limit", async () => {
+    const { deps, store } = makeDeps();
+    await store.upsertPage({
+      url: "https://example.com/a",
+      title: "",
+      links: [],
+      status: "discovered",
+    });
+
+    const { progress, result } = await executeTool(deps, "fail_session", {
+      reason: "giving up",
+    });
+
+    expect(progress.signalledDone).toBe(false);
+    expect(progress.outcome).toBeNull();
+    expect(result.terminate).toBeFalsy();
+    expect((result.details as { refused?: boolean }).refused).toBe(true);
+    expect((result.content[0] as { text: string }).text).toContain("cannot fail yet");
+  });
+
+  it("fail_session terminates once stagnation hits the limit", async () => {
+    const { deps, store } = makeDeps();
+    await store.upsertPage({
+      url: "https://example.com/a",
+      title: "",
+      links: [],
+      status: "discovered",
+    });
+
+    const { progress, result } = await executeTool(
+      deps,
+      "fail_session",
+      { reason: "unrecoverable" },
+      {
+        pagesProcessed: 0,
+        scenariosRun: 0,
+        featuresDiscoveryRuns: 0,
+        signalledDone: false,
+        doneReason: "",
+        outcome: null,
+        stagnantStreak: 8,
+        lastProgressSignature: "",
+      },
     );
 
-    const result = await handler(createTask(), createMessage("plan"));
-
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.value.state).toBe("TASK_STATE_COMPLETED");
-      expect(result.value.response[0].text).toContain("navigate");
-    }
+    expect(progress.signalledDone).toBe(true);
+    expect(progress.outcome).toBe("failed");
+    expect(progress.doneReason).toBe("unrecoverable");
+    expect(result.terminate).toBe(true);
+    expect((result.content[0] as { text: string }).text).toContain("failed");
   });
 
-  it("returns Err when getSitemapStats fails", async () => {
-    (store.getSitemapStats as any).mockResolvedValue(Err(new Error("db error")));
+  it("test(scenarioId) returns not-found text for missing scenarios", async () => {
+    const { deps } = makeDeps();
+    const { result } = await executeTool(deps, "test", { scenarioId: 999 });
 
-    const result = await handler(createTask(), createMessage("plan"));
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.message).toBe("db error");
-    }
+    expect(result.content[0]).toMatchObject({ type: "text" });
+    expect((result.content[0] as { text: string }).text).toContain("not found");
   });
 
-  it("returns Err when getUnvisitedPages fails", async () => {
-    (store.getUnvisitedPages as any).mockResolvedValue(Err(new Error("query error")));
+  it("revalidate_feature retires features that have no url patterns", async () => {
+    const { deps, store } = makeDeps();
+    const created = await store.createFeature({
+      name: "stale feature",
+      description: "",
+      status: "stale",
+      discoveredBy: "manual",
+      urlPatterns: ["https://example.com/stale/*"],
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
 
-    const result = await handler(createTask(), createMessage("plan"));
+    const featureId = created.value.feature.id;
+    const emptied = await store.updateFeature(featureId, { urlPatterns: [] });
+    expect(emptied.ok).toBe(true);
 
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.message).toBe("query error");
-    }
-  });
+    const { result } = await executeTool(deps, "revalidate_feature", { featureId });
+    expect((result.content[0] as { text: string }).text).toContain("retired");
 
-  it("returns Err when getUntestedPages fails", async () => {
-    (store.getUntestedPages as any).mockResolvedValue(Err(new Error("untested query error")));
-
-    const result = await handler(createTask(), createMessage("plan"));
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.message).toBe("untested query error");
-    }
-  });
-
-  it("returns Err when LLM call fails", async () => {
-    mockChat.mockResolvedValueOnce(Err(new Error("LLM timeout")));
-
-    const result = await handler(createTask(), createMessage("plan"));
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.message).toBe("LLM timeout");
-    }
-  });
-
-  it("uses default text when message parts are empty", async () => {
-    mockChat.mockResolvedValueOnce(
-      Ok({
-        id: "c1",
-        object: "chat.completion",
-        created: 1,
-        model: "test",
-        choices: [{ index: 0, message: { role: "assistant", content: '{"action":"done","target":"","reason":"all visited"}' }, finish_reason: "stop", logprobs: null }],
-      } as any),
-    );
-
-    const emptyMsg: Message = {
-      messageId: "msg-1",
-      role: "ROLE_USER",
-      parts: [],
-    };
-
-    const result = await handler(createTask(), emptyMsg);
-    expect(result.ok).toBe(true);
-
-    // Verify chat was called with the default "What should we do next?" text
-    const chatCall = mockChat.mock.calls[0][0];
-    const userContent = chatCall.messages[1].content as string;
-    expect(userContent).toContain("What should we do next?");
+    const reloaded = await store.getFeature(featureId);
+    expect(reloaded.ok).toBe(true);
+    expect(reloaded.ok && reloaded.value?.feature.status).toBe("retired");
   });
 });

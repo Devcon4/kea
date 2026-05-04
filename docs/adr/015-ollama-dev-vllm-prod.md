@@ -1,6 +1,7 @@
 # ADR-015: Ollama for Dev, vLLM for Production
 
 **Status**: Accepted
+**Scope**: agent
 
 ## Context
 

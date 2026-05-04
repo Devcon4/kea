@@ -1,14 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  Ok,
-  Err,
-  isOk,
-  isErr,
-  unwrap,
-  mapResult,
-  tryCatch,
-  tryCatchSync,
-} from "./result.js";
+import { Ok, Err, isOk, isErr, unwrap, mapResult, tryCatch, tryCatchSync } from "./result.js";
 
 describe("Result", () => {
   it("Ok should create a success result", () => {

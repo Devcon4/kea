@@ -16,10 +16,18 @@ FROM nginx:alpine
 
 COPY --from=build /app/dist/ /usr/share/nginx/html/
 
-# SPA fallback — serve index.html for all routes
+# SPA fallback — serve index.html for all routes; proxy /api/ to the api service
 RUN printf 'server {\n\
   listen 80;\n\
+  resolver 127.0.0.11 valid=10s ipv6=off;\n\
   root /usr/share/nginx/html;\n\
+  location /api/ {\n\
+    set $upstream http://api:4000;\n\
+    proxy_pass $upstream;\n\
+    proxy_http_version 1.1;\n\
+    proxy_set_header Host $host;\n\
+    proxy_set_header X-Real-IP $remote_addr;\n\
+  }\n\
   location / {\n\
     try_files $uri $uri/ /index.html;\n\
   }\n\

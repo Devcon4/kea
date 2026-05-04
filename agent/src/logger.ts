@@ -14,10 +14,7 @@ function buildDestination(): pino.DestinationStream {
   return multistream(streams);
 }
 
-export const logger = pino(
-  { level: process.env.LOG_LEVEL ?? "info" },
-  buildDestination(),
-);
+export const logger = pino({ level: process.env.LOG_LEVEL ?? "info" }, buildDestination());
 
 export type Logger = pino.Logger;
 

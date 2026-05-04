@@ -78,6 +78,7 @@
   --font-weight-bold: 700;
 
   /* ── Spacing ──────────────────────────────────────── */
+  --space-2xs: 0.125rem;
   --space-xs: 0.25rem;
   --space-sm: 0.5rem;
   --space-md: 1rem;

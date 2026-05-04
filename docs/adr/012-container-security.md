@@ -1,6 +1,7 @@
 # ADR-012: Container Security (Non-Root, ReadonlyFS)
 
 **Status**: Accepted
+**Scope**: agent
 
 ## Context
 

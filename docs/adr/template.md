@@ -1,6 +1,7 @@
 # ADR Template
 
 **Status**: [Proposed | Accepted | Deprecated | Superseded by ADR-XXX]
+**Scope**: [project | agent | api | dashboard | operator | shared]
 
 ## Context
 

@@ -1,6 +1,7 @@
 # ADR-003: Go + Kubebuilder for K8s Operator
 
 **Status**: Accepted
+**Scope**: operator
 
 ## Context
 

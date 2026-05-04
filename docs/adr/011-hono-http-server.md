@@ -1,6 +1,7 @@
 # ADR-011: Hono for HTTP Server
 
 **Status**: Accepted
+**Scope**: agent
 
 ## Context
 

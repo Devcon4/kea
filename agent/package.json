@@ -21,14 +21,11 @@
   },
   "dependencies": {
     "@browserbasehq/stagehand": "^3.2.0",
-    "@hono/node-server": "^1.19.12",
     "@kea/shared": "file:../shared",
-    "hono": "^4.12.11",
-    "ollama": "^0.6.3",
-    "openai": "^6.33.0",
+    "@mariozechner/pi-coding-agent": "^0.70.6",
     "pino": "^10.3.1",
     "pino-seq": "^4.0.0",
-    "rxjs": "^7.8.2",
+    "typebox": "^1.1.24",
     "zod": "^4.3.6"
   },
   "devDependencies": {

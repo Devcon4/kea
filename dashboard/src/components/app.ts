@@ -18,7 +18,7 @@ class KeaApp extends SignalWatcher(LitElement) {
   private activeCount = toSignal(this.sessionService.activeCount$, 0);
   private totalFindings = toSignal(this.sessionService.totalFindings$, 0);
 
-  private pollSub = this.sessionService.startPolling();
+  private pollSub = this.sessionService.subscribeSessionList();
 
   private router = new Router(this, [
     {
@@ -29,6 +29,11 @@ class KeaApp extends SignalWatcher(LitElement) {
       path: "/sessions/:id",
       render: ({ id }) =>
         html`<kea-session-detail .sessionId=${id}></kea-session-detail>`,
+    },
+    {
+      path: "/sessions/:id/:tab",
+      render: ({ id, tab }) =>
+        html`<kea-session-detail .sessionId=${id} .tab=${tab}></kea-session-detail>`,
     },
   ]);
 

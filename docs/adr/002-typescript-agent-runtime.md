@@ -1,6 +1,7 @@
 # ADR-002: TypeScript for Agent Runtime
 
 **Status**: Accepted
+**Scope**: agent
 
 ## Context
 

@@ -20,6 +20,7 @@ import {
   CreateFindingSchema,
   CreateChatMessageSchema,
 } from "@kea/shared";
+import type { EventBus } from "../events/bus.js";
 import type { SessionRepository } from "./repository.js";
 import {
   createSession,
@@ -32,7 +33,7 @@ import {
   upsertPage,
 } from "./domain.js";
 
-export function createSessionRoutes(repo: SessionRepository): Hono {
+export function createSessionRoutes(repo: SessionRepository, bus: EventBus): Hono {
   const app = new Hono();
 
   // ── Session lifecycle ────────────────────────────────
@@ -57,6 +58,7 @@ export function createSessionRoutes(repo: SessionRepository): Hono {
     if (!result.ok) return c.json({ error: result.error }, 422);
 
     const saved = await repo.save(result.value);
+    bus.emit({ kind: "session-list", at: Date.now() });
     return c.json(saved, 201);
   });
 
@@ -73,6 +75,8 @@ export function createSessionRoutes(repo: SessionRepository): Hono {
       const result = completeSession(session, body.data.completedAt ?? undefined);
       if (!result.ok) return c.json({ error: result.error }, 422);
       const saved = await repo.save(result.value);
+      bus.emit({ kind: "session", sessionId: saved.id, at: Date.now() });
+      bus.emit({ kind: "session-list", at: Date.now() });
       return c.json(saved);
     }
 
@@ -80,12 +84,16 @@ export function createSessionRoutes(repo: SessionRepository): Hono {
       const result = failSession(session, body.data.completedAt ?? undefined);
       if (!result.ok) return c.json({ error: result.error }, 422);
       const saved = await repo.save(result.value);
+      bus.emit({ kind: "session", sessionId: saved.id, at: Date.now() });
+      bus.emit({ kind: "session-list", at: Date.now() });
       return c.json(saved);
     }
 
     // No status change — just persist updated fields
     const updated = { ...session, ...body.data };
     const saved = await repo.save(updated);
+    bus.emit({ kind: "session", sessionId: saved.id, at: Date.now() });
+    bus.emit({ kind: "session-list", at: Date.now() });
     return c.json(saved);
   });
 
@@ -117,6 +125,7 @@ export function createSessionRoutes(repo: SessionRepository): Hono {
     if (!result.ok) return c.json({ error: result.error }, 422);
 
     await repo.savePage(session.id, result.value);
+    emitSitemap(bus, session.id);
     return c.json({ ok: true });
   });
 
@@ -131,6 +140,7 @@ export function createSessionRoutes(repo: SessionRepository): Hono {
     if (!result.ok) return c.json({ error: result.error }, 422);
 
     await repo.savePageVisit(session.id, result.value);
+    emitSitemap(bus, session.id);
     return c.json({ ok: true });
   });
 
@@ -145,6 +155,7 @@ export function createSessionRoutes(repo: SessionRepository): Hono {
     if (!result.ok) return c.json({ error: result.error }, 422);
 
     await repo.savePageDiscovery(session.id, result.value);
+    emitSitemap(bus, session.id);
     return c.json({ ok: true });
   });
 
@@ -152,6 +163,7 @@ export function createSessionRoutes(repo: SessionRepository): Hono {
     const url = c.req.query("url");
     if (!url) return c.json({ error: "url query param required" }, 400);
     await repo.removePage(c.req.param("id"), url);
+    emitSitemap(bus, c.req.param("id"));
     return c.json({ ok: true });
   });
 
@@ -160,7 +172,16 @@ export function createSessionRoutes(repo: SessionRepository): Hono {
   app.get("/api/sessions/:id/findings", async (c) => {
     const sessionId = c.req.param("id");
     const url = c.req.query("url");
-    const rows = await repo.listFindings(sessionId, url);
+    const scenarioIdRaw = c.req.query("scenarioId");
+    let scenarioId: number | undefined;
+    if (scenarioIdRaw !== undefined) {
+      const parsed = Number(scenarioIdRaw);
+      if (!Number.isInteger(parsed) || parsed < 1) {
+        return c.json({ error: "invalid scenarioId" }, 400);
+      }
+      scenarioId = parsed;
+    }
+    const rows = await repo.listFindings(sessionId, { url, scenarioId });
     return c.json(rows);
   });
 
@@ -180,10 +201,13 @@ export function createSessionRoutes(repo: SessionRepository): Hono {
       result: body.data.result,
       severity: body.data.severity,
       timestamp: body.data.timestamp,
+      scenarioId: body.data.scenarioId ?? null,
     });
     if (!result.ok) return c.json({ error: result.error }, 422);
 
     const row = await repo.saveFinding(result.value);
+    bus.emit({ kind: "findings", sessionId: session.id, at: Date.now() });
+    bus.emit({ kind: "session-list", at: Date.now() });
     return c.json(row, 201);
   });
 
@@ -194,7 +218,21 @@ export function createSessionRoutes(repo: SessionRepository): Hono {
     return c.json(rows);
   });
 
-  app.get("/api/sessions/:id/messages/stream", async (c) => {
+  /**
+   * Multiplexed per-session SSE. Replaces the prior `/messages/stream` poll.
+   * Emits two named event types:
+   *   `event: message`  — payload is the saved ChatMessage row.
+   *   `event: refresh`  — payload is `{ kind, at }` where kind is the slice
+   *                       of state that changed (sitemap | findings | features
+   *                       | session). The client refetches that slice; we never
+   *                       push the changed data itself for non-message kinds
+   *                       to avoid ordering races and payload bloat.
+   *
+   * No timers. Connection-lifetime is bus subscription only; close the
+   * EventSource on the client to detach. Browsers auto-reconnect on transient
+   * network errors and the dashboard refetches the relevant data on (re)open.
+   */
+  app.get("/api/sessions/:id/stream", async (c) => {
     const sessionId = c.req.param("id");
     const session = await repo.getById(sessionId);
     if (!session) return c.json({ error: "session not found" }, 404);
@@ -203,26 +241,85 @@ export function createSessionRoutes(repo: SessionRepository): Hono {
       new ReadableStream({
         start(controller) {
           const encoder = new TextEncoder();
-          let lastId = 0;
 
-          const interval = setInterval(async () => {
+          const unsubscribe = bus.subscribe((event) => {
+            if (event.kind === "session-list") return;
+            if (event.sessionId !== sessionId) return;
+
             try {
-              const messages = await repo.listMessages(sessionId);
-              const newMessages = messages.filter((m) => m.id > lastId);
-              for (const msg of newMessages) {
+              if (event.kind === "messages") {
                 controller.enqueue(
-                  encoder.encode(`data: ${JSON.stringify(msg)}\n\n`),
+                  encoder.encode(
+                    `event: message\ndata: ${JSON.stringify(event.message)}\n\n`,
+                  ),
                 );
-                lastId = msg.id;
+                return;
               }
+              controller.enqueue(
+                encoder.encode(
+                  `event: refresh\ndata: ${JSON.stringify({ kind: event.kind, at: event.at })}\n\n`,
+                ),
+              );
             } catch {
-              // ignore polling errors
+              // Stream already closed; subscription teardown handled below.
             }
-          }, 2000);
+          });
 
           c.req.raw.signal.addEventListener("abort", () => {
-            clearInterval(interval);
-            controller.close();
+            unsubscribe();
+            try {
+              controller.close();
+            } catch {
+              /* already closed */
+            }
+          });
+        },
+      }),
+      {
+        status: 200,
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        },
+      },
+    );
+  });
+
+  /**
+   * Session-list-level SSE. The dashboard's home view subscribes here and
+   * refetches `/api/sessions` whenever any event arrives. Emits both
+   * list-shaped events (`session-list`) and per-session refresh events that
+   * may affect list-displayed counters (sitemap pages, findings).
+   */
+  app.get("/api/sessions/stream", async (c) => {
+    return c.body(
+      new ReadableStream({
+        start(controller) {
+          const encoder = new TextEncoder();
+
+          const unsubscribe = bus.subscribe((event) => {
+            if (event.kind === "messages") return;
+            try {
+              const payload =
+                event.kind === "session-list"
+                  ? { kind: event.kind, at: event.at }
+                  : { kind: event.kind, sessionId: event.sessionId, at: event.at };
+              controller.enqueue(
+                encoder.encode(`event: refresh\ndata: ${JSON.stringify(payload)}\n\n`),
+              );
+            } catch {
+              /* stream closed */
+            }
+          });
+
+          c.req.raw.signal.addEventListener("abort", () => {
+            unsubscribe();
+            try {
+              controller.close();
+            } catch {
+              /* already closed */
+            }
           });
         },
       }),
@@ -253,8 +350,21 @@ export function createSessionRoutes(repo: SessionRepository): Hono {
     if (!result.ok) return c.json({ error: result.error }, 422);
 
     const row = await repo.saveMessage(result.value);
+    bus.emit({ kind: "messages", sessionId: session.id, at: Date.now(), message: row });
     return c.json(row, 201);
   });
 
   return app;
+}
+
+/**
+ * Sitemap mutations affect both the per-session view (sitemap tab + counters)
+ * and the list view (page totals). Two emits keep both subscribers in sync;
+ * the dashboard debounces by kind so a burst of `discoverPage` calls during a
+ * crawl coalesces into a single refetch per consumer.
+ */
+function emitSitemap(bus: EventBus, sessionId: string): void {
+  const at = Date.now();
+  bus.emit({ kind: "sitemap", sessionId, at });
+  bus.emit({ kind: "session-list", at });
 }

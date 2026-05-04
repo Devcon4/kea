@@ -1,0 +1,1 @@
+ALTER TABLE "test_plans" ADD COLUMN "revision_feedback" jsonb;

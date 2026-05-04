@@ -262,11 +262,7 @@ export class Store {
 
   getAllPages(): Result<SitemapEntry[], Error> {
     return tryCatchSync(() => {
-      const rows = this.db
-        .select()
-        .from(sitemap)
-        .orderBy(asc(sitemap.discoveredAt))
-        .all();
+      const rows = this.db.select().from(sitemap).orderBy(asc(sitemap.discoveredAt)).all();
       return rows.map(toSitemapEntry);
     });
   }
@@ -311,14 +307,9 @@ export class Store {
 
   getFindings(url?: string): Result<Finding[], Error> {
     return tryCatchSync(() => {
-      const query = this.db
-        .select()
-        .from(findings)
-        .orderBy(desc(findings.timestamp));
+      const query = this.db.select().from(findings).orderBy(desc(findings.timestamp));
 
-      const rows = url
-        ? query.where(eq(findings.url, url)).all()
-        : query.all();
+      const rows = url ? query.where(eq(findings.url, url)).all() : query.all();
 
       return rows.map(toFinding);
     });
@@ -342,7 +333,12 @@ export class Store {
 
   // -- Messages --
 
-  addMessage(message: { agentId: string; content: string; thinking?: string | null; timestamp: number }): Result<number, Error> {
+  addMessage(message: {
+    agentId: string;
+    content: string;
+    thinking?: string | null;
+    timestamp: number;
+  }): Result<number, Error> {
     return tryCatchSync(() => {
       const result = this.db
         .insert(agentMessages)
@@ -369,11 +365,7 @@ export class Store {
       if (normalized === row.url) continue;
 
       // Check if the normalized form already exists
-      const existing = this.db
-        .select()
-        .from(sitemap)
-        .where(eq(sitemap.url, normalized))
-        .get();
+      const existing = this.db.select().from(sitemap).where(eq(sitemap.url, normalized)).get();
 
       if (existing) {
         // Normalized URL exists — delete the un-normalized duplicate

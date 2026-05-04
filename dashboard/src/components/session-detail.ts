@@ -10,18 +10,24 @@ import type {
   SitemapEntry,
   ChatMessage,
   Severity,
+  FeatureWithActivePlan,
+  SessionRunRow,
 } from "../services/session.service.js";
 import { timeAgo, formatDuration, formatTimestamp, truncateUrl } from "../utils.js";
 import "./findings-table.js";
+import "./features-tab.js";
+import "./plans-tab.js";
+import "./runs-tab.js";
 import "./sitemap-table.js";
 import "./chat-thread.js";
 
-type Tab = "findings" | "sitemap" | "chat";
-const VALID_TABS = new Set<Tab>(["findings", "sitemap", "chat"]);
+type Tab = "findings" | "features" | "plans" | "runs" | "sitemap" | "chat";
+const VALID_TABS = new Set<Tab>(["findings", "features", "plans", "runs", "sitemap", "chat"]);
+const DEFAULT_TAB: Tab = "findings";
 
-function tabFromHash(): Tab {
-  const raw = location.hash.replace("#", "") as Tab;
-  return VALID_TABS.has(raw) ? raw : "findings";
+function normalizeTab(raw: string | undefined): Tab {
+  if (raw && (VALID_TABS as Set<string>).has(raw)) return raw as Tab;
+  return DEFAULT_TAB;
 }
 
 @customElement("kea-session-detail")
@@ -30,32 +36,38 @@ class KeaSessionDetail extends SignalWatcher(LitElement) {
   sessionService!: SessionService;
 
   @property() sessionId = "";
+  @property() tab: string | undefined;
 
   @state() private session: SessionDetail | null = null;
   @state() private findings: Finding[] = [];
+  @state() private features: FeatureWithActivePlan[] = [];
+  @state() private runs: SessionRunRow[] = [];
   @state() private sitemap: SitemapEntry[] = [];
   @state() private chatMessages: ChatMessage[] = [];
-  @state() private activeTab: Tab = tabFromHash();
   @state() private loading = true;
 
-  private eventSource: EventSource | null = null;
-  private onHashChange = () => { this.activeTab = tabFromHash(); };
+  private streamUnsub: (() => void) | null = null;
+
+
+  private get activeTab(): Tab {
+    return normalizeTab(this.tab);
+  }
 
   connectedCallback(): void {
     super.connectedCallback();
-    window.addEventListener("hashchange", this.onHashChange);
     this.loadData();
   }
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
-    this.eventSource?.close();
-    window.removeEventListener("hashchange", this.onHashChange);
+    this.streamUnsub?.();
+    this.streamUnsub = null;
   }
 
   updated(changed: Map<string, unknown>): void {
     if (changed.has("sessionId") && this.sessionId) {
-      this.eventSource?.close();
+      this.streamUnsub?.();
+      this.streamUnsub = null;
       this.loadData();
     }
   }
@@ -64,38 +76,79 @@ class KeaSessionDetail extends SignalWatcher(LitElement) {
     if (!this.sessionId || !this.sessionService) return;
     this.loading = true;
 
-    const [session, findings, sitemap, chatMessages] = await Promise.all([
+    const [session, findings, sitemap, chatMessages, features, runs] = await Promise.all([
       this.sessionService.fetchSessionDetail(this.sessionId),
       this.sessionService.fetchFindings(this.sessionId),
       this.sessionService.fetchSitemap(this.sessionId),
       this.sessionService.fetchMessages(this.sessionId),
+      this.sessionService.fetchFeatures(this.sessionId),
+      this.sessionService.fetchSessionRuns(this.sessionId),
     ]);
 
     this.session = session;
     this.findings = findings;
     this.sitemap = sitemap;
     this.chatMessages = chatMessages;
+    this.features = features;
+    this.runs = runs;
     this.loading = false;
 
     this.startMessageStream();
   }
 
   private startMessageStream(): void {
-    this.eventSource?.close();
-    const es = new EventSource(`/api/sessions/${this.sessionId}/messages/stream`);
-    es.onmessage = (e) => {
-      try {
-        const msg: ChatMessage = JSON.parse(e.data);
-        // Avoid duplicates
-        if (!this.chatMessages.some((m) => m.id === msg.id)) {
-          this.chatMessages = [...this.chatMessages, msg];
+    this.streamUnsub?.();
+    this.streamUnsub = this.sessionService.subscribeSession(this.sessionId, {
+      onMessage: (msg) => {
+        // Dedupe by id — chat is append-only, but if a refetch and a push
+        // arrive close together both could carry the same id.
+        if (this.chatMessages.some((m) => m.id === msg.id)) return;
+        this.chatMessages = [...this.chatMessages, msg];
+      },
+      onRefresh: (kind) => {
+        // Targeted refetch by kind. The service does the network; we just
+        // swap state. Failures inside fetch* return [] / null so the UI
+        // never crashes on a transient API hiccup.
+        if (kind === "session") {
+          void this.sessionService
+            .fetchSessionDetail(this.sessionId)
+            .then((session) => {
+              if (session) this.session = session;
+            });
+          return;
         }
-      } catch { /* ignore malformed */ }
-    };
-    es.onerror = () => {
-      // Browser will auto-reconnect for transient errors
-    };
-    this.eventSource = es;
+        if (kind === "sitemap") {
+          void Promise.all([
+            this.sessionService.fetchSitemap(this.sessionId),
+            this.sessionService.fetchSessionDetail(this.sessionId),
+          ]).then(([sitemap, session]) => {
+            this.sitemap = sitemap;
+            if (session) this.session = session;
+          });
+          return;
+        }
+        if (kind === "findings") {
+          void Promise.all([
+            this.sessionService.fetchFindings(this.sessionId),
+            this.sessionService.fetchSessionDetail(this.sessionId),
+          ]).then(([findings, session]) => {
+            this.findings = findings;
+            if (session) this.session = session;
+          });
+          return;
+        }
+        if (kind === "features") {
+          void Promise.all([
+            this.sessionService.fetchFeatures(this.sessionId),
+            this.sessionService.fetchSessionRuns(this.sessionId),
+          ]).then(([features, runs]) => {
+            this.features = features;
+            this.runs = runs;
+          });
+          return;
+        }
+      },
+    });
   }
 
   static styles = css`
@@ -113,7 +166,10 @@ class KeaSessionDetail extends SignalWatcher(LitElement) {
       margin-bottom: var(--space-lg);
       transition: color var(--duration-fast);
     }
-    .back:hover { color: var(--color-primary); text-decoration: none; }
+    .back:hover {
+      color: var(--color-primary);
+      text-decoration: none;
+    }
 
     /* ── Session header ────────────────────────────── */
     .session-header {
@@ -153,9 +209,18 @@ class KeaSessionDetail extends SignalWatcher(LitElement) {
       letter-spacing: 0.05em;
       flex-shrink: 0;
     }
-    .badge-running  { background: var(--color-success-muted); color: var(--color-success); }
-    .badge-completed { background: var(--color-primary-muted); color: var(--color-primary); }
-    .badge-failed   { background: var(--color-error-muted); color: var(--color-error); }
+    .badge-running {
+      background: var(--color-success-muted);
+      color: var(--color-success);
+    }
+    .badge-completed {
+      background: var(--color-primary-muted);
+      color: var(--color-primary);
+    }
+    .badge-failed {
+      background: var(--color-error-muted);
+      color: var(--color-error);
+    }
 
     .session-id {
       font-size: var(--text-xs);
@@ -206,10 +271,18 @@ class KeaSessionDetail extends SignalWatcher(LitElement) {
       letter-spacing: 0.05em;
     }
 
-    .stat-info    { color: var(--color-info); }
-    .stat-warning { color: var(--color-warning); }
-    .stat-error   { color: var(--color-error); }
-    .stat-critical { color: var(--color-error); }
+    .stat-info {
+      color: var(--color-info);
+    }
+    .stat-warning {
+      color: var(--color-warning);
+    }
+    .stat-error {
+      color: var(--color-error);
+    }
+    .stat-critical {
+      color: var(--color-error);
+    }
 
     /* ── Severity bar ───────────────────────────────── */
     .severity-bar {
@@ -226,10 +299,18 @@ class KeaSessionDetail extends SignalWatcher(LitElement) {
       transition: width var(--duration-slow) var(--ease-out);
     }
 
-    .severity-critical { background: var(--color-error); }
-    .severity-error    { background: var(--red-400); }
-    .severity-warning  { background: var(--color-warning); }
-    .severity-info     { background: var(--color-info); }
+    .severity-critical {
+      background: var(--color-error);
+    }
+    .severity-error {
+      background: var(--red-400);
+    }
+    .severity-warning {
+      background: var(--color-warning);
+    }
+    .severity-info {
+      background: var(--color-info);
+    }
 
     /* ── Tabs ───────────────────────────────────────── */
     .tabs {
@@ -248,8 +329,13 @@ class KeaSessionDetail extends SignalWatcher(LitElement) {
       border: none;
       background: none;
       border-bottom: 2px solid transparent;
-      transition: color var(--duration-fast), border-color var(--duration-fast);
+      transition:
+        color var(--duration-fast),
+        border-color var(--duration-fast);
       font-family: inherit;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
     }
 
     .tab:hover {
@@ -268,7 +354,8 @@ class KeaSessionDetail extends SignalWatcher(LitElement) {
     }
 
     /* ── Loading / Empty ────────────────────────────── */
-    .loading, .not-found {
+    .loading,
+    .not-found {
       color: var(--color-text-muted);
       text-align: center;
       padding: var(--space-2xl);
@@ -279,8 +366,13 @@ class KeaSessionDetail extends SignalWatcher(LitElement) {
     }
 
     @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.4; }
+      0%,
+      100% {
+        opacity: 1;
+      }
+      50% {
+        opacity: 0.4;
+      }
     }
   `;
 
@@ -300,13 +392,17 @@ class KeaSessionDetail extends SignalWatcher(LitElement) {
 
     return html`
       <div class="severity-bar">
-        ${segments.filter(s => s.count > 0).map(s => html`
-          <div
-            class="severity-segment severity-${s.severity}"
-            style="width: ${(s.count / total) * 100}%"
-            title="${s.severity}: ${s.count}"
-          ></div>
-        `)}
+        ${segments
+          .filter((s) => s.count > 0)
+          .map(
+            (s) => html`
+              <div
+                class="severity-segment severity-${s.severity}"
+                style="width: ${(s.count / total) * 100}%"
+                title="${s.severity}: ${s.count}"
+              ></div>
+            `,
+          )}
       </div>
     `;
   }
@@ -349,8 +445,16 @@ class KeaSessionDetail extends SignalWatcher(LitElement) {
     `;
   }
 
-  private setTab(tab: Tab): void {
-    location.hash = tab;
+  private tabHref(tab: Tab): string {
+    return `/sessions/${this.sessionId}/${tab}`;
+  }
+
+  private navigateTo(href: string, e: Event): void {
+    e.preventDefault();
+    if (location.pathname === href) return;
+    history.pushState({}, "", href);
+    // @lit-labs/router subscribes to popstate; emit one to trigger re-render.
+    dispatchEvent(new PopStateEvent("popstate"));
   }
 
   render() {
@@ -389,41 +493,51 @@ class KeaSessionDetail extends SignalWatcher(LitElement) {
         </div>
       </div>
 
-      ${this.renderSeverityBar()}
-      ${this.renderStats()}
+      ${this.renderSeverityBar()} ${this.renderStats()}
 
       <div class="tabs" role="tablist">
-        <button
-          class="tab"
-          role="tab"
-          aria-selected="${this.activeTab === "findings"}"
-          @click=${() => this.setTab("findings")}
-        >
-          Findings<span class="tab-count">${this.findings.length}</span>
-        </button>
-        <button
-          class="tab"
-          role="tab"
-          aria-selected="${this.activeTab === "sitemap"}"
-          @click=${() => this.setTab("sitemap")}
-        >
-          Sitemap<span class="tab-count">${this.sitemap.length}</span>
-        </button>
-        <button
-          class="tab"
-          role="tab"
-          aria-selected="${this.activeTab === "chat"}"
-          @click=${() => this.setTab("chat")}
-        >
-          Chat<span class="tab-count">${this.chatMessages.length}</span>
-        </button>
+        ${(
+          [
+            { id: "findings", label: "Findings", count: this.findings.length },
+            { id: "features", label: "Features", count: this.features.length },
+            {
+              id: "plans",
+              label: "Test Plans",
+              count: this.features.filter((f) => f.activePlan !== null).length,
+            },
+            { id: "runs", label: "Runs", count: this.runs.length },
+            { id: "sitemap", label: "Sitemap", count: this.sitemap.length },
+            { id: "chat", label: "Chat", count: this.chatMessages.length },
+          ] as { id: Tab; label: string; count: number }[]
+        ).map(
+          (t) => html`
+            <a
+              class="tab"
+              role="tab"
+              href=${this.tabHref(t.id)}
+              aria-selected="${this.activeTab === t.id}"
+              @click=${(e: Event) => this.navigateTo(this.tabHref(t.id), e)}
+            >
+              ${t.label}<span class="tab-count">${t.count}</span>
+            </a>
+          `,
+        )}
       </div>
 
       ${this.activeTab === "findings"
         ? html`<kea-findings-table .findings=${this.findings}></kea-findings-table>`
-        : this.activeTab === "sitemap"
-          ? html`<kea-sitemap-table .entries=${this.sitemap}></kea-sitemap-table>`
-          : html`<kea-chat-thread .messages=${this.chatMessages}></kea-chat-thread>`}
+        : this.activeTab === "features"
+          ? html`<kea-features-tab .features=${this.features}></kea-features-tab>`
+          : this.activeTab === "plans"
+            ? html`<kea-plans-tab .features=${this.features}></kea-plans-tab>`
+            : this.activeTab === "runs"
+              ? html`<kea-runs-tab .runs=${this.runs}></kea-runs-tab>`
+              : this.activeTab === "sitemap"
+                ? html`<kea-sitemap-table .entries=${this.sitemap}></kea-sitemap-table>`
+                : html`<kea-chat-thread
+                    .messages=${this.chatMessages}
+                    ?live=${this.session?.status === "running"}
+                  ></kea-chat-thread>`}
     `;
   }
 }

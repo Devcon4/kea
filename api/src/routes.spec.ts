@@ -81,32 +81,26 @@ describeWithDb("API routes (integration)", () => {
       body: JSON.stringify({ status: "running", completedAt: null }),
     });
 
-    const res = await app.request(
-      "/api/sessions/test-session-1/sitemap/discover",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: "http://example.com/page1",
-        }),
-      },
-    );
+    const res = await app.request("/api/sessions/test-session-1/sitemap/discover", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: "http://example.com/page1",
+      }),
+    });
     expect(res.status).toBe(200);
   });
 
   it("POST /api/sessions/:id/sitemap/visit should visit a page", async () => {
-    const res = await app.request(
-      "/api/sessions/test-session-1/sitemap/visit",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: "http://example.com/page1",
-          title: "Page 1",
-          links: ["http://example.com/page2"],
-        }),
-      },
-    );
+    const res = await app.request("/api/sessions/test-session-1/sitemap/visit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: "http://example.com/page1",
+        title: "Page 1",
+        links: ["http://example.com/page2"],
+      }),
+    });
     expect(res.status).toBe(200);
   });
 
@@ -121,6 +115,30 @@ describeWithDb("API routes (integration)", () => {
   // -- Findings --
 
   it("POST /api/sessions/:id/findings should add a finding", async () => {
+    const featureRes = await app.request("/api/sessions/test-session-1/features", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Checkout",
+        description: "Checkout flow",
+        urlPatterns: ["https://example.com/checkout/*"],
+        initialPlan: {
+          createdBy: "manual",
+          scenarios: [
+            {
+              name: "checkout scenario",
+              entryUrl: "https://example.com/checkout",
+              steps: [{ kind: "navigate", url: "https://example.com/checkout" }],
+              expectedOutcome: "checkout visible",
+            },
+          ],
+        },
+      }),
+    });
+    expect(featureRes.status).toBe(201);
+    const featureBody = await json(featureRes);
+    const scenarioId = featureBody.activePlan.scenarios[0].id;
+
     const res = await app.request("/api/sessions/test-session-1/findings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -131,6 +149,7 @@ describeWithDb("API routes (integration)", () => {
         result: "500 Internal Server Error",
         severity: "error",
         timestamp: Date.now(),
+        scenarioId,
       }),
     });
     expect(res.status).toBe(201);
@@ -144,6 +163,30 @@ describeWithDb("API routes (integration)", () => {
     const body = await json(res);
     expect(body.length).toBe(1);
     expect(body[0].severity).toBe("error");
+    expect(body[0].scenarioId).toBeTruthy();
+  });
+
+  it("GET /api/sessions/:id/findings?scenarioId= filters to a single scenario", async () => {
+    const allRes = await app.request("/api/sessions/test-session-1/findings");
+    const all = await json(allRes);
+    const scenarioId = all[0].scenarioId as number;
+
+    const matchRes = await app.request(
+      `/api/sessions/test-session-1/findings?scenarioId=${scenarioId}`,
+    );
+    expect(matchRes.status).toBe(200);
+    const matched = await json(matchRes);
+    expect(matched).toHaveLength(1);
+    expect(matched[0].scenarioId).toBe(scenarioId);
+
+    const missRes = await app.request(
+      `/api/sessions/test-session-1/findings?scenarioId=${scenarioId + 9999}`,
+    );
+    expect(missRes.status).toBe(200);
+    expect(await json(missRes)).toHaveLength(0);
+
+    const badRes = await app.request("/api/sessions/test-session-1/findings?scenarioId=abc");
+    expect(badRes.status).toBe(400);
   });
 
   // -- Stats --

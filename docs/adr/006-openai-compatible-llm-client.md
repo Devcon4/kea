@@ -1,6 +1,7 @@
 # ADR-006: OpenAI-Compatible LLM Client
 
-**Status**: Accepted
+**Status**: Superseded by [ADR-021](021-pi-sdk-as-agent-runtime.md)
+**Scope**: agent
 
 ## Context
 

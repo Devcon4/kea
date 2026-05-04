@@ -1,6 +1,7 @@
 # ADR-007: Google A2A Protocol for Agent Communication
 
-**Status**: Accepted
+**Status**: Superseded by [ADR-022](022-pi-subagents-extension-model.md)
+**Scope**: agent
 
 ## Context
 

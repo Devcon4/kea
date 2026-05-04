@@ -1,6 +1,7 @@
 # ADR-009: Result Type for Error Handling
 
 **Status**: Accepted
+**Scope**: project
 
 ## Context
 

@@ -1,6 +1,7 @@
 # ADR-005: Custom Agent Loop over Frameworks
 
-**Status**: Accepted
+**Status**: Superseded by [ADR-021](021-pi-sdk-as-agent-runtime.md)
+**Scope**: agent
 
 ## Context
 

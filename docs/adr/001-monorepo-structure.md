@@ -1,6 +1,7 @@
 # ADR-001: Monorepo Structure
 
 **Status**: Accepted
+**Scope**: project
 
 ## Context
 

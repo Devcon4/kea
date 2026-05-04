@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { Browser, toAgentTools } from "./stagehand.js";
+import { Browser } from "./stagehand.js";
 
 vi.mock("../logger.js", () => ({
   createLogger: () => ({
@@ -10,9 +10,9 @@ vi.mock("../logger.js", () => ({
   }),
 }));
 
-vi.mock("../llm/client.js", () => ({
-  getLLMConfig: () => ({
-    baseURL: "http://localhost:11434/v1",
+vi.mock("../pi/env.js", () => ({
+  loadLlmEnv: () => ({
+    baseUrl: "http://localhost:11434/v1",
     apiKey: "test-key",
     model: "test-model",
   }),
@@ -24,6 +24,12 @@ const mockPage = {
   title: vi.fn().mockResolvedValue("Test Page"),
   url: vi.fn().mockReturnValue("https://example.com"),
   evaluate: vi.fn(),
+  // Diagnostics plumbing: launch() injects an init script via CDP and
+  // subscribes to console events. Mocks satisfy the call signatures so
+  // unrelated tests don't trip over them.
+  sendCDP: vi.fn().mockResolvedValue(undefined),
+  on: vi.fn(),
+  screenshot: vi.fn().mockResolvedValue(Buffer.from("png")),
 };
 
 const mockInit = vi.fn();
@@ -235,10 +241,7 @@ describe("Browser", () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value).toEqual([
-          "https://example.com/about",
-          "https://example.com/contact",
-        ]);
+        expect(result.value).toEqual(["https://example.com/about", "https://example.com/contact"]);
       }
     });
 
@@ -302,6 +305,81 @@ describe("Browser", () => {
     });
   });
 
+  describe("llm fetch interceptor", () => {
+    it("records non-2xx responses to LLM_BASE_URL into captureDiagnostics", async () => {
+      const original = globalThis.fetch;
+      const native = vi.fn(async (input: unknown) => {
+        const url = typeof input === "string" ? input : (input as { url: string }).url;
+        if (url.startsWith("http://localhost:11434")) {
+          return new Response(
+            JSON.stringify({ error: "failed to load model vocabulary required for format" }),
+            { status: 500, statusText: "Internal Server Error" },
+          );
+        }
+        return new Response("", { status: 200 });
+      });
+      globalThis.fetch = native as unknown as typeof fetch;
+      try {
+        await browser.launch();
+
+        const reqBody = JSON.stringify({ model: "test-model", messages: [{ role: "user", content: "hi" }] });
+        const res = await globalThis.fetch("http://localhost:11434/v1/chat/completions", {
+          method: "POST",
+          body: reqBody,
+        });
+        expect(res.status).toBe(500);
+
+        // Untracked traffic must pass through.
+        await globalThis.fetch("http://other.example/ping", { method: "GET" });
+
+        mockPage.evaluate.mockResolvedValueOnce({
+          pageErrors: [],
+          networkFailures: [],
+          domSnippet: "",
+          domTruncated: false,
+        });
+        const cap = await browser.captureDiagnostics({ failingStepIndex: 1 });
+        expect(cap.ok).toBe(true);
+        if (!cap.ok) return;
+        expect(cap.value.diagnostics.llmFailures).toHaveLength(1);
+        const f = cap.value.diagnostics.llmFailures[0];
+        expect(f.url).toBe("http://localhost:11434/v1/chat/completions");
+        expect(f.status).toBe(500);
+        expect(f.requestBody).toBe(reqBody);
+        expect(f.requestBodyTruncated).toBe(false);
+        expect(f.responseBody).toContain("failed to load model vocabulary");
+      } finally {
+        await browser.close();
+        globalThis.fetch = original;
+      }
+    });
+
+    it("resetDiagnostics clears the buffer", async () => {
+      const original = globalThis.fetch;
+      globalThis.fetch = vi.fn(
+        async () => new Response("err", { status: 500 }),
+      ) as unknown as typeof fetch;
+      try {
+        await browser.launch();
+        await globalThis.fetch("http://localhost:11434/v1/x", { method: "POST", body: "a" });
+        await browser.resetDiagnostics();
+        mockPage.evaluate.mockResolvedValueOnce({
+          pageErrors: [],
+          networkFailures: [],
+          domSnippet: "",
+          domTruncated: false,
+        });
+        const cap = await browser.captureDiagnostics({ failingStepIndex: null });
+        expect(cap.ok).toBe(true);
+        if (!cap.ok) return;
+        expect(cap.value.diagnostics.llmFailures).toEqual([]);
+      } finally {
+        await browser.close();
+        globalThis.fetch = original;
+      }
+    });
+  });
+
   describe("close", () => {
     it("does nothing when not launched", async () => {
       await browser.close(); // should not throw
@@ -315,31 +393,5 @@ describe("Browser", () => {
       expect(mockClose).toHaveBeenCalledOnce();
       expect(browser.isLaunched()).toBe(false);
     });
-  });
-});
-
-describe("toAgentTools", () => {
-  it("returns 5 tool definitions", () => {
-    const tools = toAgentTools();
-    expect(tools).toHaveLength(5);
-  });
-
-  it("includes expected tool names", () => {
-    const tools = toAgentTools();
-    const names = tools.map((t) => t.name);
-    expect(names).toContain("browser_navigate");
-    expect(names).toContain("browser_act");
-    expect(names).toContain("browser_extract");
-    expect(names).toContain("browser_extract_text");
-    expect(names).toContain("browser_observe");
-  });
-
-  it("each tool has name, description, and parameters", () => {
-    const tools = toAgentTools();
-    for (const tool of tools) {
-      expect(tool.name).toBeTypeOf("string");
-      expect(tool.description).toBeTypeOf("string");
-      expect(tool.parameters).toBeDefined();
-    }
   });
 });

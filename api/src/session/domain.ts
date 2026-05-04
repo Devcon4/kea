@@ -44,6 +44,7 @@ export type AddFindingInput = {
   result: string;
   severity: Severity;
   timestamp: number;
+  scenarioId?: number | null;
 };
 
 export type AddMessageInput = {
@@ -61,9 +62,7 @@ export type VisitPageInput = {
 
 // ── Factory ────────────────────────────────────────────
 
-export function createSession(
-  input: CreateSessionInput,
-): Result<Session, string> {
+export function createSession(input: CreateSessionInput): Result<Session, string> {
   if (!input.id) return Err("Session id is required");
   if (!input.targetUrl) return Err("Target URL is required");
   if (input.maxPages < 1) return Err("maxPages must be at least 1");
@@ -113,10 +112,7 @@ export function completeSession(
 /**
  * Transition a session to 'failed'.
  */
-export function failSession(
-  session: Session,
-  completedAt = Date.now(),
-): Result<Session, string> {
+export function failSession(session: Session, completedAt = Date.now()): Result<Session, string> {
   const guard = assertRunning(session);
   if (!guard.ok) return guard;
 
@@ -149,6 +145,7 @@ export function addFinding(
     result: input.result,
     severity: input.severity,
     timestamp: input.timestamp,
+    scenarioId: input.scenarioId ?? null,
   });
 }
 
@@ -156,10 +153,7 @@ export function addFinding(
  * Mark a page as visited, creating or updating the sitemap entry.
  * Enforces: session must be running, URL normalized, timestamp set.
  */
-export function visitPage(
-  session: Session,
-  input: VisitPageInput,
-): Result<SitemapEntry, string> {
+export function visitPage(session: Session, input: VisitPageInput): Result<SitemapEntry, string> {
   const guard = assertRunning(session);
   if (!guard.ok) return guard;
 
@@ -178,10 +172,7 @@ export function visitPage(
  * Record that a URL was discovered (but not yet visited).
  * Enforces: session must be running, URL normalized.
  */
-export function discoverPage(
-  session: Session,
-  url: string,
-): Result<SitemapEntry, string> {
+export function discoverPage(session: Session, url: string): Result<SitemapEntry, string> {
   const guard = assertRunning(session);
   if (!guard.ok) return guard;
 

@@ -1,6 +1,7 @@
 # ADR-013: TypeScript Coding Standards
 
 **Status**: Accepted
+**Scope**: project
 
 ## Context
 

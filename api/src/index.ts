@@ -6,8 +6,7 @@ import { createLogger } from "./logger.js";
 
 const log = createLogger("main");
 
-const databaseUrl =
-  process.env.DATABASE_URL ?? "postgres://kea:kea@localhost:5432/kea";
+const databaseUrl = process.env.DATABASE_URL ?? "postgres://kea:kea@localhost:5432/kea";
 const port = Number(process.env.PORT) || 4000;
 
 const { db, client } = createDatabase(databaseUrl);

@@ -1,6 +1,7 @@
 # ADR-010: RxJS for Reactive State Management
 
-**Status**: Accepted
+**Status**: Superseded by [ADR-021](021-pi-sdk-as-agent-runtime.md) (agent scope only — dashboard-side RxJS is covered by [ADR-017](017-rxjs-services-with-signal-bridge.md))
+**Scope**: agent
 
 ## Context
 
